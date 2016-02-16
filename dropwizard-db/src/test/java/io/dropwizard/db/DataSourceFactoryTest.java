@@ -8,6 +8,7 @@ import io.dropwizard.jackson.Jackson;
 import io.dropwizard.util.Duration;
 import io.dropwizard.validation.BaseValidator;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -17,6 +18,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.fail;
 
 public class DataSourceFactoryTest {
     private final MetricRegistry metricRegistry = new MetricRegistry();
@@ -70,34 +72,30 @@ public class DataSourceFactoryTest {
     @Test
     public void testValidationQueryTimeoutIsSet() throws Exception {
         factory.setValidationQueryTimeout(Duration.seconds(3));
-
-        try (Connection connection = dataSource().getConnection()) {
+        // want this to be larger due to hikari internals
+        factory.setMaxWaitForConnection(Duration.seconds(5));
+        dataSource();
+        // Something appears to be delayed in hikari on a mbp it seems like 450 ms sleep fails 50% of the time
+        // a one second sleep does not appear to fail at all for me. sigh.
+        Thread.sleep(1000);
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement statement = connection.prepareStatement("select 1")) {
                 assertThat(statement.getQueryTimeout()).isEqualTo(3);
             }
         }
     }
 
-    @Test(expected = SQLException.class)
+    @Test
     public void invalidJDBCDriverClassThrowsSQLException() throws SQLException {
         final DataSourceFactory factory = new DataSourceFactory();
         factory.setDriverClass("org.example.no.driver.here");
 
-        factory.build(metricRegistry, "test").getConnection();
-    }
-
-    @Test
-    public void testCustomValidator() throws Exception {
-        factory.setValidatorClassName(Optional.of(CustomConnectionValidator.class.getName()));
-        try (Connection connection = dataSource().getConnection()) {
-            try (PreparedStatement statement = connection.prepareStatement("select 1")) {
-                try (ResultSet rs = statement.executeQuery()) {
-                    assertThat(rs.next());
-                    assertThat(rs.getInt(1)).isEqualTo(1);
-                }
-            }
+        try {
+            factory.build(metricRegistry, "test").getConnection();
+            fail("Expected exception");
+        } catch (RuntimeException e) {
+            assertThat(e.getMessage()).contains("Could not load class of driverClassName");
         }
-        assertThat(CustomConnectionValidator.loaded).isTrue();
     }
 
     @Test

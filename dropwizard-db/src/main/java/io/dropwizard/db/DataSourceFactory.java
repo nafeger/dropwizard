@@ -5,10 +5,10 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Optional;
 import com.google.common.primitives.Ints;
+import com.zaxxer.hikari.HikariConfig;
 import io.dropwizard.util.Duration;
 import io.dropwizard.validation.MinDuration;
 import io.dropwizard.validation.ValidationMethod;
-import org.apache.tomcat.jdbc.pool.PoolProperties;
 
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
@@ -267,33 +267,25 @@ import java.util.concurrent.TimeUnit;
  *             To avoid excess validation, only run validation once every interval.
  *         </td>
  *     </tr>
- *     <tr>
- *         <td>{@code validatorClassName}</td>
- *         <td>(none)</td>
- *         <td>
- *             Name of a class of a custom {@link org.apache.tomcat.jdbc.pool.Validator}
- *             implementation, which will be used for validating connections.
- *         </td>
- *     </tr>
  * </table>
  */
 public class DataSourceFactory implements PooledDataSourceFactory {
     @SuppressWarnings("UnusedDeclaration")
     public enum TransactionIsolation {
-        NONE(Connection.TRANSACTION_NONE),
-        DEFAULT(org.apache.tomcat.jdbc.pool.DataSourceFactory.UNKNOWN_TRANSACTIONISOLATION),
-        READ_UNCOMMITTED(Connection.TRANSACTION_READ_UNCOMMITTED),
-        READ_COMMITTED(Connection.TRANSACTION_READ_COMMITTED),
-        REPEATABLE_READ(Connection.TRANSACTION_REPEATABLE_READ),
-        SERIALIZABLE(Connection.TRANSACTION_SERIALIZABLE);
+        NONE("TRANSACTION_NONE"),
+        DEFAULT("TRANSACTION_READ_UNCOMMITTED"),
+        READ_UNCOMMITTED("TRANSACTION_READ_UNCOMMITTED"),
+        READ_COMMITTED("TRANSACTION_READ_COMMITTED"),
+        REPEATABLE_READ("TRANSACTION_REPEATABLE_READ"),
+        SERIALIZABLE("TRANSACTION_SERIALIZABLE");
 
-        private final int value;
+        private final String value;
 
-        TransactionIsolation(int value) {
+        TransactionIsolation(String value) {
             this.value = value;
         }
 
-        public int get() {
+        public String get() {
             return value;
         }
     }
@@ -792,52 +784,54 @@ public class DataSourceFactory implements PooledDataSourceFactory {
             properties.setProperty(property.getKey(), property.getValue());
         }
 
-        final PoolProperties poolConfig = new PoolProperties();
-        poolConfig.setAbandonWhenPercentageFull(abandonWhenPercentageFull);
-        poolConfig.setAlternateUsernameAllowed(alternateUsernamesAllowed);
-        poolConfig.setCommitOnReturn(commitOnReturn);
-        poolConfig.setDbProperties(properties);
-        poolConfig.setDefaultAutoCommit(autoCommitByDefault);
-        poolConfig.setDefaultCatalog(defaultCatalog);
-        poolConfig.setDefaultReadOnly(readOnlyByDefault);
-        poolConfig.setDefaultTransactionIsolation(defaultTransactionIsolation.get());
+        final HikariConfig poolConfig = new HikariConfig(properties);
+//        poolConfig.setAbandonWhenPercentageFull(abandonWhenPercentageFull);
+//        poolConfig.setAlternateUsernameAllowed(alternateUsernamesAllowed);
+//        poolConfig.setCommitOnReturn(commitOnReturn);
+//        poolConfig.setDbProperties(properties);
+        if (autoCommitByDefault != null) {
+            poolConfig.setAutoCommit(autoCommitByDefault);
+        }
+        poolConfig.setCatalog(defaultCatalog);
+        if (readOnlyByDefault != null) {
+            poolConfig.setReadOnly(readOnlyByDefault);
+        }
+        poolConfig.setTransactionIsolation(defaultTransactionIsolation.get());
         poolConfig.setDriverClassName(driverClass);
-        poolConfig.setFairQueue(useFairQueue);
-        poolConfig.setInitialSize(initialSize);
-        poolConfig.setInitSQL(initializationQuery);
-        poolConfig.setLogAbandoned(logAbandonedConnections);
-        poolConfig.setLogValidationErrors(logValidationErrors);
-        poolConfig.setMaxActive(maxSize);
-        poolConfig.setMaxIdle(maxSize);
-        poolConfig.setMinIdle(minSize);
+//        poolConfig.setFairQueue(useFairQueue);
+//        poolConfig.setInitialSize(initialSize);
+        poolConfig.setConnectionInitSql(initializationQuery);
+//        poolConfig.setLogAbandoned(logAbandonedConnections);
+//        poolConfig.setLogValidationErrors(logValidationErrors);
+        poolConfig.setMaximumPoolSize(maxSize);
+//        poolConfig.setMaxIdle(maxSize);
+        poolConfig.setMinimumIdle(minSize);
 
         if (getMaxConnectionAge().isPresent()) {
-            poolConfig.setMaxAge(maxConnectionAge.toMilliseconds());
+            poolConfig.setMaxLifetime(maxConnectionAge.toMilliseconds());
         }
 
-        poolConfig.setMaxWait((int) maxWaitForConnection.toMilliseconds());
-        poolConfig.setMinEvictableIdleTimeMillis((int) minIdleTime.toMilliseconds());
-        poolConfig.setName(name);
-        poolConfig.setUrl(url);
+        poolConfig.setConnectionTimeout((int) maxWaitForConnection.toMilliseconds());
+        poolConfig.setMinimumIdle((int) minIdleTime.toMilliseconds());
+        poolConfig.setPoolName(name);
+        poolConfig.setJdbcUrl(url);
         poolConfig.setUsername(user);
         poolConfig.setPassword(user != null && password == null ? "" : password);
-        poolConfig.setRemoveAbandoned(removeAbandoned);
-        poolConfig.setRemoveAbandonedTimeout(Ints.saturatedCast(removeAbandonedTimeout.toSeconds()));
+//        poolConfig.setRemoveAbandoned(removeAbandoned);
+//        poolConfig.setRemoveAbandonedTimeout(Ints.saturatedCast(removeAbandonedTimeout.toSeconds()));
 
-        poolConfig.setTestWhileIdle(checkConnectionWhileIdle);
-        poolConfig.setValidationQuery(validationQuery);
-        poolConfig.setTestOnBorrow(checkConnectionOnBorrow);
-        poolConfig.setTestOnConnect(checkConnectionOnConnect);
-        poolConfig.setTestOnReturn(checkConnectionOnReturn);
-        poolConfig.setTimeBetweenEvictionRunsMillis((int) evictionInterval.toMilliseconds());
-        poolConfig.setValidationInterval(validationInterval.toMilliseconds());
+//        poolConfig.setTestWhileIdle(checkConnectionWhileIdle);
+        poolConfig.setConnectionTestQuery(validationQuery);
+//        poolConfig.setTestOnBorrow(checkConnectionOnBorrow);
+//        poolConfig.setTestOnConnect(checkConnectionOnConnect);
+//        poolConfig.setTestOnReturn(checkConnectionOnReturn);
+//        poolConfig.setTimeBetweenEvictionRunsMillis((int) evictionInterval.toMilliseconds());
+//        poolConfig.setValidationInterval(validationInterval.toMilliseconds());
 
         if (getValidationQueryTimeout().isPresent()) {
-            poolConfig.setValidationQueryTimeout((int) validationQueryTimeout.toSeconds());
+            poolConfig.setValidationTimeout((int) validationQueryTimeout.toMilliseconds());
         }
-        if (validatorClassName.isPresent()) {
-            poolConfig.setValidatorClassName(validatorClassName.get());
-        }
+
 
         return new ManagedPooledDataSource(poolConfig, metricRegistry);
     }

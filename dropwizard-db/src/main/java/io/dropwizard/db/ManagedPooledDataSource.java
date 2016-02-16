@@ -1,30 +1,52 @@
 package io.dropwizard.db;
 
-import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
-import org.apache.tomcat.jdbc.pool.ConnectionPool;
-import org.apache.tomcat.jdbc.pool.DataSourceProxy;
-import org.apache.tomcat.jdbc.pool.PoolConfiguration;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.util.logging.Logger;
-
-import static com.codahale.metrics.MetricRegistry.name;
 
 /**
  * A {@link ManagedDataSource} which is backed by a Tomcat pooled {@link javax.sql.DataSource}.
  */
-public class ManagedPooledDataSource extends DataSourceProxy implements ManagedDataSource {
+public class ManagedPooledDataSource implements ManagedDataSource {
+    private HikariConfig config;
     private final MetricRegistry metricRegistry;
+    private HikariDataSource datasource;
 
     /**
      * Create a new data source with the given connection pool configuration.
      *
      * @param config the connection pool configuration
      */
-    public ManagedPooledDataSource(PoolConfiguration config, MetricRegistry metricRegistry) {
-        super(config);
+    public ManagedPooledDataSource(HikariConfig config, MetricRegistry metricRegistry) {
+        this.config = config;
+
         this.metricRegistry = metricRegistry;
+    }
+
+    @Override
+    public PrintWriter getLogWriter() throws SQLException {
+        return this.datasource.getLogWriter();
+    }
+
+    @Override
+    public void setLogWriter(PrintWriter out) throws SQLException {
+       this.datasource.setLogWriter(out);
+    }
+
+    @Override
+    public void setLoginTimeout(int seconds) throws SQLException {
+        this.datasource.setLoginTimeout(seconds);
+    }
+
+    @Override
+    public int getLoginTimeout() throws SQLException {
+        return this.datasource.getLoginTimeout();
     }
 
     // JDK6 has JDBC 4.0 which doesn't have this -- don't add @Override
@@ -35,22 +57,32 @@ public class ManagedPooledDataSource extends DataSourceProxy implements ManagedD
 
     @Override
     public void start() throws Exception {
-        final ConnectionPool connectionPool = createPool();
-        metricRegistry.register(name(getClass(), connectionPool.getName(), "active"),
-            (Gauge<Integer>) connectionPool::getActive);
-
-        metricRegistry.register(name(getClass(), connectionPool.getName(), "idle"),
-            (Gauge<Integer>) connectionPool::getIdle);
-
-        metricRegistry.register(name(getClass(), connectionPool.getName(), "waiting"),
-            (Gauge<Integer>) connectionPool::getWaitCount);
-
-        metricRegistry.register(name(getClass(), connectionPool.getName(), "size"),
-            (Gauge<Integer>) connectionPool::getSize);
+        datasource = new HikariDataSource(this.config);
+        datasource.setMetricRegistry(metricRegistry);
     }
 
     @Override
     public void stop() throws Exception {
-        close();
+        datasource.close();
+    }
+
+    @Override
+    public Connection getConnection() throws SQLException {
+        return this.datasource.getConnection();
+    }
+
+    @Override
+    public Connection getConnection(String username, String password) throws SQLException {
+        return this.datasource.getConnection(username,password);
+    }
+
+    @Override
+    public <T> T unwrap(Class<T> iface) throws SQLException {
+        return this.datasource.unwrap(iface);
+    }
+
+    @Override
+    public boolean isWrapperFor(Class<?> iface) throws SQLException {
+        return this.datasource.isWrapperFor(iface);
     }
 }
